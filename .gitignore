@@ -1,2 +1,5 @@
 node_modules/
 concrete.xlsx
+cleanJSON/
+outputCSV/
+outputJSON/

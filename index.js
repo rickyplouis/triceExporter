@@ -1,8 +1,16 @@
 const converter = require('node-xlsx');
 const fs = require('fs');
-const obj = converter.parse('./concrete.xlsx');
+
 const csv = require('csvtojson');
 const moment = require('moment');
+const readline = require('readline');
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
+
+let userInput = '';
+
 
 const ExcelDateToJSDate = (serial) => {
    var utc_days  = Math.floor(serial - 25569);
@@ -25,44 +33,52 @@ const formatHeader = (header) => {
   let actualLengthCounter = 0;
   let actualDepthCounter = 0;
   return header.map((item) => {
-    item = item.toLowerCase();
-    if (item.indexOf('date completed') >= 0) {
+    if (item.indexOf('Date Completed') >= 0) {
       item = 'completionDate'
     }
-    if (item.indexOf('order') >= 0) {
+    if (item.indexOf('Order') >= 0) {
       item = 'orderNumber'
     }
-    if (item.indexOf('release') >= 0) {
+    if (item.indexOf('Release') >= 0) {
       item = 'releaseDate'
     }
-    if (item.indexOf('c&g') >= 0) {
+    if (item.indexOf('Address') >= 0) {
+      item = 'address'
+    }
+    if (item.indexOf('Town') >= 0) {
+      item = 'town'
+    }
+    if (item.indexOf('Area') >= 0) {
+      item = 'area'
+    }
+    if (item.indexOf('C&G') >= 0) {
       item = 'proposedCG'
     }
-    if (item.indexOf('proposed width') >= 0) {
+    if (item.indexOf('Proposed Width') >= 0) {
       item = `proposedWidth_${proposedWidthCounter}`;
       proposedWidthCounter += 1;
     }
-    if (item.indexOf('proposed length') >= 0) {
+    if (item.indexOf('Proposed Length') >= 0) {
       item = `proposedLength_${proposedLengthCounter}`;
       proposedLengthCounter += 1;
     }
-    if (item.indexOf('proposed depth') >= 0) {
+    if (item.indexOf('Proposed Depth') >= 0) {
       item = `proposedDepth_${proposedDepthCounter}`;
       proposedDepthCounter += 1;
     }
-    if (item.indexOf('actual width') >= 0) {
+    if (item.indexOf('Actual Width') >= 0) {
       item = `actualWidth_${actualWidthCounter}`;
       actualWidthCounter += 1;
     }
-    if (item.indexOf('actual length') >= 0) {
+    if (item.indexOf('Actual Length') >= 0) {
       item = `actualLength_${actualLengthCounter}`;
       actualLengthCounter += 1;
     }
-    if (item.indexOf('actual depth') >= 0) {
+    if (item.indexOf('Actual Depth') >= 0) {
       item = `actualDepth_${actualDepthCounter}`;
       actualDepthCounter += 1;
     }
-    if (item.indexOf('dig') >= 0) {
+    if (item.indexOf('Dig') >= 0) {
       item = 'digNumber';
     }
     return item;
@@ -71,10 +87,9 @@ const formatHeader = (header) => {
 
 const formatName = (name) => name.toLowerCase().replace(' ', '_');
 
-const createCSV = (sheets) => {
+const createCSV = (sheets, workType) => {
   //looping through all sheets
   let csvStringArray = [];
-  console.log('sheets.length', sheets.length);
   for(let x = 0; x < sheets.length; x++) {
       let rows = [];
       let writeStr = "";
@@ -109,37 +124,44 @@ const createCSV = (sheets) => {
       if(err) {
         return console.log(err);
       }
-      console.log('saved!');
+      console.log(`successfully created CSV file: ${dir}/${str.name}`);
     });
   })
+  createJSON(workType)
 }
 
-const createJSON = () => {
-  const csvDirectory = './outputCSV/';
-
-  const csvFilePaths = [
-    'crestwood_concrete-complete.csv',
-    'crestwood_concrete-open.csv',
-    'glenwood_concrete-complete.csv',
-    'glenwood_concrete-open.csv'
-  ]
-
-  csvFilePaths.map((file) => {
-    const dir = './outputJSON';
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir);
-    }
-    csv().fromFile(csvDirectory + file).then((jsonObj) => {
-      const outputName = file.split('.')[0] + '.json'
-      fs.writeFile(`${dir}/${outputName}`, JSON.stringify(jsonObj), (err) => {
-        console.log('writing');
-        if (err) {
-          throw Error(err)
-        }
-        console.log('Saved!');
-      })
+const makeJSON = (file) => new Promise(function(resolve, reject) {
+  const dir = './outputJSON';
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir);
+  }
+  csv().fromFile('./outputCSV/' + file).then((jsonObj) => {
+    const outputName = file.split('.')[0] + '.json'
+    console.log('outputName', outputName);
+    fs.writeFile(`${dir}/${outputName}`, JSON.stringify(jsonObj), (err) => {
+      if (err) {
+        reject(err);
+        throw Error(err)
+      }
+      resolve('success');
+      console.log(`Successfully created ${dir}/${outputName}`);
+      cleanJSON(outputName);
     })
   })
+});
+
+const createJSON = (workType) => {
+  const csvDirectory = './outputCSV/';
+  const csvFilePaths = [
+    `crestwood_${workType}-complete.csv`,
+    `crestwood_${workType}-open.csv`,
+    `glenwood_${workType}-complete.csv`,
+    `glenwood_${workType}-open.csv`
+  ]
+
+  for (let file of csvFilePaths) {
+    makeJSON(file);
+  }
 }
 
 const createTicket = () => {
@@ -168,17 +190,13 @@ const SpreadsheetController = {
   },
   formatDimensions(jsonObj) {
     const formatDim = (val, isDepth = false) => {
-      if (val === '') {
-        return 0;
-      }
-      if (val === null || val === false || !val) {
-        return 0;
-      }
-      if (typeof val === 'number') {
-        if (isDepth) {
-          return parseInt(val, 10);
+      if (typeof val === 'string') {
+        if (val === '') {
+          return 0;
         }
-        return val * 12;
+        if (!isNaN(val)) {
+          return parseInt(val);
+        }
       }
       return 0;
     };
@@ -245,6 +263,7 @@ const SpreadsheetController = {
         completionDate = '',
         priority = '',
         issue = '',
+        proposedDimensions = [],
       } = obj;
       ticket._p_project = 'nicor';
       ticket.ada = ada === '' ? 0 : ada;
@@ -271,35 +290,30 @@ const SpreadsheetController = {
 };
 
 
-const cleanJSON = () => {
-  const inputJSON = [
-    'crestwood_concrete-complete.json',
-    'glenwood_concrete-complete.json',
-    'crestwood_concrete-open.json',
-    'glenwood_concrete-open.json',
-  ]
+const cleanJSON = (file) => {
+  console.log('cleanJSON::file', file);
+  //EX) crestwood_concrete-complete.json
 
-  for (let j = 0; j < inputJSON.length; j += 1) {
-    const file = inputJSON[j];
-    const json = JSON.parse(fs.readFileSync('./outputJSON/' + file, 'utf8'));
-    const isConcrete = file.indexOf('concrete') >= 0;
-    const isCompleted = file.indexOf('complete') >= 0;
-    const { formatJSON } = SpreadsheetController;
-    for (let x = 0; x < json.length; x += 1) {
-      let cleanJSON = formatJSON(json, isConcrete, isCompleted);
-      const dir = './cleanJSON';
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir);
-      }
-      fs.writeFile(`${dir}/${file}`, JSON.stringify(cleanJSON), (err) => {
-        if (err) {
-          throw Error(err)
-        }
-      })
-    }
+  const parsedJSON = JSON.parse(fs.readFileSync('./outputJSON/' + file, 'utf8'));
+  const isConcrete = file.indexOf('concrete') >= 0;
+  const isCompleted = file.indexOf('complete') >= 0;
+  const { formatJSON } = SpreadsheetController;
+  let cleaned = formatJSON(parsedJSON, isConcrete, isCompleted);
+  const dir = './cleanJSON';
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir);
   }
+  fs.writeFile(`${dir}/${file}`, JSON.stringify(cleaned), (err) => {
+    if (err) {
+      throw Error(err)
+    }
+    console.log(`successfully cleaned JSON: ${dir}/${file}`);
+  })
 }
 
-createCSV(obj);
-createJSON();
-cleanJSON();
+rl.question('Which would you like to create JSON for? (concrete or asphalt) ', (answer) => {
+  console.log(`You've input: ${answer}`);
+  const obj = converter.parse(`./${answer}.xlsx`);
+  createCSV(obj, answer);
+  rl.close();
+});
